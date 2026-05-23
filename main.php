@@ -21,7 +21,7 @@ function wclrf_register_admin_menu() {
         'ทำนายยอดขาย Polynomial Regression',
         'ทำนายยอดขาย Polynomial Regression',
         'manage_options',
-        'wc-sales-forecast-lr',
+        'sales-forecast',
         'wclrf_render_dashboard_page'
     );
 
@@ -42,6 +42,12 @@ function wclrf_enqueue_chart_js() {
 function wclrf_calculate_regression_data() {
     global $wpdb;
 
+    if(isset($_GET['month'])) {
+        $month = $_GET['month'];
+    } else {
+        $month = get_option('default_month_training_set', 12);
+    }
+
     // ดึงข้อมูลออเดอร์ย้อนหลัง 12 เดือน
     $query = $wpdb->prepare("
         SELECT 
@@ -56,7 +62,7 @@ function wclrf_calculate_regression_data() {
           AND p.post_date < DATE_FORMAT(NOW() ,'%Y-%m-01')
         GROUP BY sales_month
         ORDER BY sales_month ASC
-    ", $_GET['month'] ?? 12);
+    ", $month);
 
     $results = $wpdb->get_results( $query, ARRAY_A );
 
@@ -169,6 +175,13 @@ function wclrf_calculate_regression_data() {
     );
 }
 
+add_action('admin_init', 'regression_setting_init');
+
+function regression_setting_init()
+{
+    register_setting('regression_setting_group', 'default_month_training_set');
+}
+
 // 3. แสดงผลหน้า Dashboard สถิติหลังบ้าน
 function wclrf_render_dashboard_page() {
     $data = wclrf_calculate_regression_data();
@@ -191,7 +204,7 @@ function wclrf_render_dashboard_page() {
             <div class="notice notice-error"><p><?php echo $data['error']; ?></p></div>
         <?php else : ?>
             <p style="font-size: 18px;">วันที่ออกรายงาน: <?=date("d/m/Y");?> <button class="button button-small no-print" onclick="window.print()">พิมพ์หน้านี้</button></p>
-            จำนวนเดือน (ไม่ต่ำกว่า 3 เดือน): <input type="number" value="<?=$_GET['month'] ?? 12?>" step="1" onchange="window.location.href='admin.php?page=wc-sales-forecast-lr&month='+this.value"> เดือน<br><br>
+            จำนวนเดือน (ไม่ต่ำกว่า 3 เดือน): <input type="number" value="<?=$_GET['month'] ?? get_option('default_month_training_set', 12)?>" step="1" onchange="window.location.href='admin.php?page=sales-forecast&month='+this.value"> เดือน<br><br>
             <div style="display:flex; gap:15px; margin-bottom:20px;">
                 <div style="background:#fff; padding:15px; border-left:4px solid #46b450; box-shadow:0 1px 1px rgba(0,0,0,.04); flex:1;">
                     <h3>แนวโน้มธุรกิจปัจจุบัน (Slope)</h3>
@@ -216,7 +229,6 @@ function wclrf_render_dashboard_page() {
             $actual_sales = array();
             $regression_line = array();
 
-            // ใส่ข้อมูลฝั่งอดีต (12 เดือนล่าสุด)
             foreach ( $data['historical'] as $row ) {
                 $labels[]          = $row['month'];
                 $actual_sales[]    = $row['actual'];
@@ -308,7 +320,7 @@ function wclrf_render_dashboard_page() {
             <div style="display: flex; gap: 20px; flex-wrap: wrap;">
                 <div style="flex: 2; min-width: 400px;">
                     <div style="background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
-                        <h3>📊 ยอดขายจริง VS เส้นจำลองสถิติ (12 เดือนล่าสุด)</h3>
+                        <h3>📊 ยอดขายจริง VS เส้นจำลองสถิติ</h3>
                         <table class="wp-list-table widefat fixed striped">
                             <thead>
                                 <tr>
@@ -392,6 +404,16 @@ function wclrf_render_dashboard_page() {
             </div>
 
         <?php endif; ?>
+    </div>
+    <div style="background: #fff; padding: 20px; margin-top: 20px; width: max-content;">
+        <h1>ตั้งค่าระบบ</h1>
+        <form action="options.php" method="post">
+            <?php
+            settings_fields('regression_setting_group');
+            ?>
+            จำนวนเดือนที่ต้องการ Train: <input type="number" name="default_month_training_set" value="<?=get_option('default_month_training_set', 12)?>"> เดือน
+            <button type="submit" class="button">บันทึกการเปลี่ยนแปลง</button>
+        </form>
     </div>
     <?php
 }
