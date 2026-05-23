@@ -173,13 +173,24 @@ function wclrf_calculate_regression_data() {
 function wclrf_render_dashboard_page() {
     $data = wclrf_calculate_regression_data();
     ?>
+    <style>
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+
+        body {
+            transform: scale(1);
+        }
+    }
+    </style>
     <div class="wrap">
         <?php if ( ! $data ) : ?>
             <div class="notice notice-warning"><p>ไม่พบข้อมูลยอดขายในระบบที่เพียงพอต่อการวิเคราะห์</p></div>
         <?php elseif ( isset( $data['error'] ) ) : ?>
             <div class="notice notice-error"><p><?php echo $data['error']; ?></p></div>
         <?php else : ?>
-
+            <p style="font-size: 18px;">วันที่ออกรายงาน: <?=date("d/m/Y");?> <button class="button button-small no-print" onclick="window.print()">พิมพ์หน้านี้</button></p>
             <div style="display:flex; gap:15px; margin-bottom:20px;">
                 <div style="background:#fff; padding:15px; border-left:4px solid #46b450; box-shadow:0 1px 1px rgba(0,0,0,.04); flex:1;">
                     <h3>แนวโน้มธุรกิจปัจจุบัน (Slope)</h3>
@@ -501,11 +512,22 @@ function wckmc_render_clustering_page() {
         2 => 'rgba(75, 192, 192, 0.7)'   // สีเขียวมินต์
     );
     ?>
+    <style>
+    @media print {
+        .no-print {
+            display: none !important;
+        }
+
+        body {
+            transform: scale(1);
+        }
+    }
+    </style>
     <div class="wrap">
         <?php if (!$result) : ?>
             <div class="notice notice-warning"><p>ข้อมูลลูกค้าและออเดอร์ในระบบมีไม่เพียงพอต่อการจัดกลุ่มสถิติ</p></div>
         <?php else : ?>
-
+            <p style="font-size: 18px;">วันที่ออกรายงาน: <?=date("d/m/Y");?> <button class="button button-small no-print" onclick="window.print()">พิมพ์หน้านี้</button></p>
             <div style="background: #fff; padding: 20px; margin-bottom: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
                 <div style="position: relative; width: 100%; height: 450px;">
                     <canvas id="wckmcClusterChart"></canvas>
@@ -518,7 +540,7 @@ function wckmc_render_clustering_page() {
                         <h3><?php echo isset($cluster_labels[$cluster_id]) ? $cluster_labels[$cluster_id] : 'กลุ่มที่ ' . ($cluster_id + 1); ?></h3>
                         <p>จำนวนสมาชิกในกลุ่ม: <strong><?php echo count($members); ?></strong> คน</p>
                         
-                        <div style="max-height: 250px; overflow-y: auto;">
+                        <div style="max-height: 500px; overflow-y: auto;">
                             <table class="wp-list-table widefat fixed striped">
                                 <thead>
                                     <tr>
