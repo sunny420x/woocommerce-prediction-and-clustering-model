@@ -18,8 +18,8 @@ add_action( 'admin_menu', 'wclrf_register_admin_menu' );
 function wclrf_register_admin_menu() {
     $page_hook = add_submenu_page(
         'woocommerce',
-        'ทำนายยอดขาย Polynomial regression',
-        'ทำนายยอดขาย Polynomial regression',
+        'ทำนายยอดขาย Polynomial Regression',
+        'ทำนายยอดขาย Polynomial Regression',
         'manage_options',
         'wc-sales-forecast-lr',
         'wclrf_render_dashboard_page'
@@ -132,7 +132,7 @@ function wclrf_calculate_regression_data() {
     $forecast_data = array();
     $last_month_str = end( $months_label );
     
-    // 💡 1. คำนวณค่ายอดขายเฉลี่ยในอดีต (Mean) และดึงค่ายอดขายเดือนล่าสุด (Last Month Actual) ไว้เป็นแผนสำรอง
+    // 1. คำนวณค่ายอดขายเฉลี่ยในอดีต (Mean) และดึงค่ายอดขายเดือนล่าสุด (Last Month Actual) ไว้เป็นแผนสำรอง
     $average_sales = ( count( $y ) > 0 ) ? array_sum( $y ) / count( $y ) : 0;
     $last_actual_sales = end( $y ); // ยอดขายจริงของเดือนล่าสุด
 
@@ -143,7 +143,7 @@ function wclrf_calculate_regression_data() {
         // คำนวณตามสูตรพหุนามปกติ
         $pred_y = ($a * $next_x * $next_x) + ($b * $next_x) + $c;
         
-        // 💡 2. ระบบดักเซฟตี้: ถ้า Polynomial เหวี่ยงจนยอดต่ำกว่า 10% ของยอดเฉลี่ย หรือติดลบ
+        // 2. ระบบดักเซฟตี้: ถ้า Polynomial เหวี่ยงจนยอดต่ำกว่า 10% ของยอดเฉลี่ย หรือติดลบ
         // เราจะสลับไปใช้ค่ายอดขายเดือนล่าสุด (หรือค่าเฉลี่ย) ประคองกราฟแทนทันที
         if ( $pred_y < ( $average_sales * 0.10 ) ) {
             // นายสามารถเลือกได้: 
@@ -349,6 +349,254 @@ function wclrf_render_dashboard_page() {
                     </div>
                 </div>
             </div>
+
+        <?php endif; ?>
+    </div>
+    <?php
+}
+
+add_action( 'admin_menu', 'wckmc_register_admin_menu' );
+function wckmc_register_admin_menu() {
+    $page_hook = add_submenu_page(
+        'woocommerce',
+        'จัดกลุ่มลูกค้า Customer Clusters/Segmentation',
+        'จัดกลุ่มลูกค้า Customer Clusters',
+        'manage_options',
+        'wc-customer-clustering',
+        'wckmc_render_clustering_page'
+    );
+    
+    // บังคับโหลด Chart.js ที่ Header ในหน้านี้
+    add_action( 'admin_print_scripts-' . $page_hook, 'wckmc_enqueue_chart_js' );
+}
+
+function wckmc_enqueue_chart_js() {
+    wp_enqueue_script('chart-js-cdn', 'https://cdn.jsdelivr.net/npm/chart.js', array(), '4.4.1', false);
+}
+
+// 2. K-Means Clustering Engine (PHP Native)
+function wckmc_run_kmeans_clustering($k = 3, $max_iterations = 100) {
+    global $wpdb;
+
+    // ดึงข้อมูลพฤติกรรมลูกค้า: ID, จำนวนออเดอร์ (Frequency), ยอดซื้อรวม (Monetary)
+    $query = "
+        SELECT 
+            p.meta_value as customer_id,
+            COUNT(p.post_id) as frequency,
+            SUM(m.meta_value) as monetary
+        FROM {$wpdb->postmeta} p
+        INNER JOIN {$wpdb->postmeta} m ON p.post_id = m.post_id
+        INNER JOIN {$wpdb->posts} posts ON p.post_id = posts.ID
+        WHERE p.meta_key = '_customer_user'
+          AND m.meta_key = '_order_total'
+          AND posts.post_status IN ('wc-completed', 'wc-processing')
+          AND p.meta_value > 0
+        GROUP BY customer_id
+    ";
+
+    $customers = $wpdb->get_results($query, ARRAY_A);
+
+    if (empty($customers) || count($customers) < $k) {
+        return false;
+    }
+
+    // ฟอร์แมตข้อมูลดิบให้อยู่ในรูป Array พิกัด [X = Frequency, Y = Monetary]
+    $data_points = array();
+    foreach ($customers as $c) {
+        $user_info = get_userdata($c['customer_id']);
+        $name = $user_info ? $user_info->display_name : 'Guest #' . $c['customer_id'];
+        
+        $data_points[$c['customer_id']] = array(
+            'id'   => $c['customer_id'],
+            'name' => $name,
+            'x'    => (int)$c['frequency'],
+            'y'    => (float)$c['monetary']
+        );
+    }
+
+    // --- เริ่มต้นอัลกอริทึม K-Means ---
+    
+    // สุ่มจุดศูนย์กลางเริ่มต้น (Centroids Initialization)
+    $centroids = array();
+    $random_keys = array_rand($data_points, $k);
+    foreach ((array)$random_keys as $index => $key) {
+        $centroids[$index] = array('x' => $data_points[$key]['x'], 'y' => $data_points[$key]['y']);
+    }
+
+    $assignments = array();
+
+    // ลูปประมวลผลจนกว่าจุดศูนย์กลางจะนิ่ง หรือครบจำนวนรอบสูงสุด
+    for ($iter = 0; $iter < $max_iterations; $iter++) {
+        $new_assignments = array();
+        $cluster_sums = array_fill(0, $k, array('x' => 0, 'y' => 0, 'count' => 0));
+
+        // สเต็ปที่ A: หาว่าลูกค้าแต่ละคน อยู่ใกล้จุดศูนย์กลางไหนที่สุด (Euclidean Distance)
+        foreach ($data_points as $id => $point) {
+            $min_dist = INF;
+            $closest_cluster = 0;
+
+            foreach ($centroids as $cluster_id => $centroid) {
+                // สูตรระยะห่าง: sqrt((x2-x1)^2 + (y2-y1)^2)
+                $dist = sqrt(pow($point['x'] - $centroid['x'], 2) + pow($point['y'] - $centroid['y'], 2));
+                if ($dist < $min_dist) {
+                    $min_dist = $dist;
+                    $closest_cluster = $cluster_id;
+                }
+            }
+
+            $new_assignments[$id] = $closest_cluster;
+            
+            // เก็บสะสมยอดรวมเพื่อใช้วิเคราะห์ค่าเฉลี่ยจุดศูนย์กลางใหม่
+            $cluster_sums[$closest_cluster]['x'] += $point['x'];
+            $cluster_sums[$closest_cluster]['y'] += $point['y'];
+            $cluster_sums[$closest_cluster]['count']++;
+        }
+
+        // เช็คว่ากลุ่มนิ่งหรือยัง (ถ้าไม่มีลูกค้าคนไหนย้ายกลุ่มเลยให้หยุดลูปทันที)
+        if ($new_assignments === $assignments) {
+            break;
+        }
+        $assignments = $new_assignments;
+
+        // สเต็ปที่ B: คำนวณหาจุดศูนย์กลางใหม่จากค่าเฉลี่ยของสมาชิกในกลุ่ม (Update Centroids)
+        foreach ($centroids as $cluster_id => $centroid) {
+            if ($cluster_sums[$cluster_id]['count'] > 0) {
+                $centroids[$cluster_id]['x'] = $cluster_sums[$cluster_id]['x'] / $cluster_sums[$cluster_id]['count'];
+                $centroids[$cluster_id]['y'] = $cluster_sums[$cluster_id]['y'] / $cluster_sums[$cluster_id]['count'];
+            }
+        }
+    }
+
+    // จัดกลุ่มผลลัพธ์เพื่อส่งออกไปแสดงผลหน้าบ้าน
+    $clustered_results = array_fill(0, $k, array());
+    foreach ($data_points as $id => $point) {
+        $cluster_id = $assignments[$id];
+        $point['cluster'] = $cluster_id;
+        $clustered_results[$cluster_id][] = $point;
+    }
+
+    return array(
+        'clusters'  => $clustered_results,
+        'centroids' => $centroids
+    );
+}
+
+// 3. หน้า Dashboard แสดงกราฟและตารางรายชื่อลูกค้า
+function wckmc_render_clustering_page() {
+    // สั่งรันจัดกลุ่มลูกค้าเป็น 3 กลุ่ม (สามารถเปลี่ยนตัวเลขได้ตามใจชอบ)
+    $k = 3;
+    $result = wckmc_run_kmeans_clustering($k);
+    
+    // นิยามป้ายกำกับกลุ่มแบบเข้าใจง่าย
+    $cluster_labels = array(
+        0 => 'กลุ่มที่ 1 (ลูกค้าทั่วไป/มาซื้อเป็นครั้งคราว)',
+        1 => 'กลุ่มที่ 2 (กลุ่มความถี่สูง/ซื้อบ่อย)',
+        2 => 'กลุ่มที่ 3 (กลุ่มพรีเมียม)'
+    );
+
+    // เซ็ตคู่สีประจำกลุ่มสำหรับวาดกราฟ Scatter Plot
+    $cluster_colors = array(
+        0 => 'rgba(255, 99, 132, 0.7)',  // สีแดงอมชมพู
+        1 => 'rgba(54, 162, 235, 0.7)',  // สีน้ำเงิน
+        2 => 'rgba(75, 192, 192, 0.7)'   // สีเขียวมินต์
+    );
+    ?>
+    <div class="wrap">
+        <?php if (!$result) : ?>
+            <div class="notice notice-warning"><p>ข้อมูลลูกค้าและออเดอร์ในระบบมีไม่เพียงพอต่อการจัดกลุ่มสถิติ</p></div>
+        <?php else : ?>
+
+            <div style="background: #fff; padding: 20px; margin-bottom: 20px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
+                <div style="position: relative; width: 100%; height: 450px;">
+                    <canvas id="wckmcClusterChart"></canvas>
+                </div>
+            </div>
+
+            <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                <?php foreach ($result['clusters'] as $cluster_id => $members) : ?>
+                    <div style="flex: 1; min-width: 300px; background: #fff; padding: 15px; border: 1px solid #ccd0d4; border-top: 4px solid <?php echo $cluster_colors[$cluster_id]; ?>;">
+                        <h3><?php echo isset($cluster_labels[$cluster_id]) ? $cluster_labels[$cluster_id] : 'กลุ่มที่ ' . ($cluster_id + 1); ?></h3>
+                        <p>จำนวนสมาชิกในกลุ่ม: <strong><?php echo count($members); ?></strong> คน</p>
+                        
+                        <div style="max-height: 250px; overflow-y: auto;">
+                            <table class="wp-list-table widefat fixed striped">
+                                <thead>
+                                    <tr>
+                                        <th>ชื่อลูกค้า</th>
+                                        <th>จำนวนครั้ง (F)</th>
+                                        <th>ยอดรวม (M)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php foreach ($members as $member) : ?>
+                                        <tr>
+                                            <td><strong><?php echo esc_html($member['name']); ?></strong></td>
+                                            <td><?php echo $member['x']; ?> ครั้ง</td>
+                                            <td><?php echo number_format($member['y']); ?> ฿</td>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+
+            <script>
+            document.addEventListener("DOMContentLoaded", function() {
+                const ctx = document.getElementById('wckmcClusterChart');
+                if (!ctx) return;
+
+                // ดึงข้อมูลกลุ่มและคู่สีจากฝั่ง PHP
+                const clusterColors = <?php echo json_encode($cluster_colors); ?>;
+                const rawClusters = <?php echo json_encode($result['clusters']); ?>;
+                const clusterLabels = <?php echo json_encode($cluster_labels); ?>;
+                
+                // แปลงข้อมูลให้อยู่ในฟอร์แมต Datasets ของ Chart.js Scatter
+                const datasets = Object.keys(rawClusters).map(clusterId => {
+                    return {
+                        label: clusterLabels[clusterId] || 'Cluster ' + clusterId,
+                        data: rawClusters[clusterId].map(item => ({ x: item.x, y: item.y, labelName: item.name })),
+                        backgroundColor: clusterColors[clusterId],
+                        pointRadius: 6,
+                        pointHoverRadius: 8
+                    };
+                });
+
+                new Chart(ctx, {
+                    type: 'scatter', // ใช้กราฟกระจายพิกัด XY
+                    data: { datasets: datasets },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            tooltip: {
+                                callbacks: {
+                                    // ปรับแต่งหน้าต่าง Tooltip เวลาเอาเมาส์ไปชี้ที่จุดให้โชว์ชื่อลูกค้าด้วย
+                                    label: function(context) {
+                                        const rawPoint = context.raw;
+                                        return rawPoint.labelName + ' (ซื้อ ' + rawPoint.x + ' ครั้ง, ยอดรวม ' + rawPoint.y.toLocaleString() + ' บาท)';
+                                    }
+                                }
+                            }
+                        },
+                        scales: {
+                            x: {
+                                title: { display: true, text: 'ความถี่ในการซื้อ (Frequency - จำนวนครั้ง)', font: { weight: 'bold' } },
+                                beginAtZero: true
+                            },
+                            y: {
+                                title: { display: true, text: 'ยอดซื้อสะสม (Monetary - บาท)', font: { weight: 'bold' } },
+                                beginAtZero: true,
+                                ticks: {
+                                    callback: function(value) { return value.toLocaleString() + ' ฿'; }
+                                }
+                            }
+                        }
+                    }
+                });
+            });
+            </script>
 
         <?php endif; ?>
     </div>
