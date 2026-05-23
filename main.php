@@ -318,7 +318,7 @@ function wclrf_render_dashboard_page() {
             </script>
 
             <div style="display: flex; gap: 20px; flex-wrap: wrap;">
-                <div style="flex: 2; min-width: 400px;">
+                <div style="flex: 2; min-width: 400px;" class="no-print">
                     <div style="background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04);">
                         <h3>📊 ยอดขายจริง VS เส้นจำลองสถิติ</h3>
                         <table class="wp-list-table widefat fixed striped">
@@ -400,7 +400,7 @@ function wclrf_render_dashboard_page() {
                         </table>
                         <p class="description" style="margin-top: 15px;">* หมายเหตุ: เป็นการคำนวณทิศทางจากสถิติแบบเส้นตรงล้วนๆ ไม่ได้คำนวณปัจจัยประเภทช่วงเทศกาล (Seasonal Effect) หรือแคมเปญโปรโมชั่นเสริม</p>
                     </div>
-                    <div style="background: #fff; padding: 20px; margin-top: 20px; width: max-content;">
+                    <div style="background: #fff; padding: 20px; margin-top: 20px; width: max-content;" class="no-print">
                         <h1>ตั้งค่าระบบ</h1>
                         <form action="options.php" method="post">
                             <?php
