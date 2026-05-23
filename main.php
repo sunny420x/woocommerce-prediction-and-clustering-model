@@ -400,20 +400,19 @@ function wclrf_render_dashboard_page() {
                         </table>
                         <p class="description" style="margin-top: 15px;">* หมายเหตุ: เป็นการคำนวณทิศทางจากสถิติแบบเส้นตรงล้วนๆ ไม่ได้คำนวณปัจจัยประเภทช่วงเทศกาล (Seasonal Effect) หรือแคมเปญโปรโมชั่นเสริม</p>
                     </div>
+                    <div style="background: #fff; padding: 20px; margin-top: 20px; width: max-content;">
+                        <h1>ตั้งค่าระบบ</h1>
+                        <form action="options.php" method="post">
+                            <?php
+                            settings_fields('regression_setting_group');
+                            ?>
+                            จำนวนเดือนที่ต้องการ Train: <input type="number" name="default_month_training_set" value="<?=get_option('default_month_training_set', 12)?>"> เดือน
+                            <button type="submit" class="button">บันทึกการเปลี่ยนแปลง</button>
+                        </form>
+                    </div>
                 </div>
             </div>
-
         <?php endif; ?>
-    </div>
-    <div style="background: #fff; padding: 20px; margin-top: 20px; width: max-content;">
-        <h1>ตั้งค่าระบบ</h1>
-        <form action="options.php" method="post">
-            <?php
-            settings_fields('regression_setting_group');
-            ?>
-            จำนวนเดือนที่ต้องการ Train: <input type="number" name="default_month_training_set" value="<?=get_option('default_month_training_set', 12)?>"> เดือน
-            <button type="submit" class="button">บันทึกการเปลี่ยนแปลง</button>
-        </form>
     </div>
     <?php
 }
