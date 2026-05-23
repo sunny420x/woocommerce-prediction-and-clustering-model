@@ -43,7 +43,7 @@ function wclrf_calculate_regression_data() {
     global $wpdb;
 
     // ดึงข้อมูลออเดอร์ย้อนหลัง 12 เดือน
-    $query = "
+    $query = $wpdb->prepare("
         SELECT 
             DATE_FORMAT(p.post_date, '%Y-%m') as sales_month,
             SUM(meta.meta_value) as total_sales
@@ -52,11 +52,11 @@ function wclrf_calculate_regression_data() {
         WHERE p.post_type = 'shop_order'
           AND p.post_status IN ('wc-completed', 'wc-processing')
           AND meta.meta_key = '_order_total'
-          AND p.post_date >= DATE_SUB(DATE_FORMAT(NOW() ,'%Y-%m-01'), INTERVAL 12 MONTH)
+          AND p.post_date >= DATE_SUB(DATE_FORMAT(NOW() ,'%Y-%m-01'), INTERVAL %d MONTH)
           AND p.post_date < DATE_FORMAT(NOW() ,'%Y-%m-01')
         GROUP BY sales_month
         ORDER BY sales_month ASC
-    ";
+    ", $_GET['month'] ?? 12);
 
     $results = $wpdb->get_results( $query, ARRAY_A );
 
@@ -191,6 +191,7 @@ function wclrf_render_dashboard_page() {
             <div class="notice notice-error"><p><?php echo $data['error']; ?></p></div>
         <?php else : ?>
             <p style="font-size: 18px;">วันที่ออกรายงาน: <?=date("d/m/Y");?> <button class="button button-small no-print" onclick="window.print()">พิมพ์หน้านี้</button></p>
+            จำนวนเดือน (ไม่ต่ำกว่า 3 เดือน): <input type="number" value="<?=$_GET['month'] ?? 12?>" step="1" onchange="window.location.href='admin.php?page=wc-sales-forecast-lr&month='+this.value"> เดือน<br><br>
             <div style="display:flex; gap:15px; margin-bottom:20px;">
                 <div style="background:#fff; padding:15px; border-left:4px solid #46b450; box-shadow:0 1px 1px rgba(0,0,0,.04); flex:1;">
                     <h3>แนวโน้มธุรกิจปัจจุบัน (Slope)</h3>
@@ -318,8 +319,19 @@ function wclrf_render_dashboard_page() {
                                 </tr>
                             </thead>
                             <tbody>
-                                <?php foreach ( $data['historical'] as $row ) : 
-                                    $diff = $row['actual'] - $row['regression'];
+                                <?php 
+                                    $sum_squared_error = 0; // ตั้งตัวแปรไว้เก็บผลรวมด้านนอกลูป
+                                    $total_months = count( $data['historical'] );
+
+                                    foreach ( $data['historical'] as $row ) : 
+                                        // 1. คำนวณหาผลต่างปกติ (Residual)
+                                        $diff = $row['actual'] - $row['regression'];
+                                        
+                                        // 2. คำนวณคำถามของนาย: จับยกกำลังสองเป็น Squared Error ของเดือนนั้นๆ
+                                        $squared_error = pow($diff, 2); 
+                                        
+                                        // 3. บวกสะสมยอดเข้าคลังเพื่อเอาไปคิด MSE ภาพรวมหลังจบลูป
+                                        $sum_squared_error += $squared_error;
                                 ?>
                                 <tr>
                                     <td><strong><?php echo $row['month']; ?></strong></td>
@@ -329,7 +341,25 @@ function wclrf_render_dashboard_page() {
                                         <?php echo $diff >= 0 ? '+' : ''; ?><?php echo number_format( $diff, 2 ); ?> บาท
                                     </td>
                                 </tr>
-                                <?php endforeach; ?>
+                                <?php endforeach; 
+                                $mse = ($total_months > 0) ? ($sum_squared_error / $total_months) : 0;
+
+                                $actual_values = array_column($data['historical'], 'actual');
+                                $mean_actual = ($total_months > 0) ? (array_sum($actual_values) / $total_months) : 0;
+
+                                // 2. คำนวณหาค่า SStot (ผลรวมความแปรปรวนจากค่าเฉลี่ย)
+                                $ss_tot = 0;
+                                foreach ($actual_values as $actual_val) {
+                                    $ss_tot += pow(($actual_val - $mean_actual), 2);
+                                }
+
+                                // 3. เข้าสูตร R² = 1 - (SSres / SStot)
+                                // ดักไว้หน่อยถ้า $ss_tot เป็น 0 (กรณีทุกเดือนยอดขายเท่ากันเป๊ะ) ให้ R² เป็น 1
+                                $r_squared = ($ss_tot > 0) ? (1 - ($sum_squared_error / $ss_tot)) : 1;
+                                
+                                // แปลงเป็นเปอร์เซ็นต์ให้มนุษย์อ่านง่ายๆ
+                                $r_squared_percentage = $r_squared * 100;
+                                ?>
                             </tbody>
                         </table>
                     </div>
@@ -337,7 +367,7 @@ function wclrf_render_dashboard_page() {
 
                 <div style="flex: 1; min-width: 280px;">
                     <div style="background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04); border-top: 4px solid #ffb900;">
-                        <h3>🔮 ผลการทำนายยอดขาย (3 เดือนข้างหน้า)</h3>
+                        <h3>🔮 ผลการทำนายยอดขาย (3 เดือนข้างหน้า) ค่า R Squared = <?=bcdiv($r_squared_percentage, 1, 2);?>%</h3>
                         <table class="wp-list-table widefat fixed striped">
                             <thead>
                                 <tr>
