@@ -39,7 +39,7 @@ function wclrf_enqueue_chart_js() {
 }
 
 // 2. ฟังก์ชันหลักในการดึงข้อมูลและคำนวณ Regression
-function wclrf_calculate_regression_data() {
+function calculate_regression_data() {
     global $wpdb;
 
     if(isset($_GET['month'])) {
@@ -48,7 +48,7 @@ function wclrf_calculate_regression_data() {
         $month = get_option('default_month_training_set', 12);
     }
 
-    // ดึงข้อมูลออเดอร์ย้อนหลัง 12 เดือน
+    // ดึงข้อมูลออเดอร์ย้อนหลังตามจำนวนเดือนที่กำหนด
     $query = $wpdb->prepare("
         SELECT 
             DATE_FORMAT(p.post_date, '%Y-%m') as sales_month,
@@ -134,6 +134,25 @@ function wclrf_calculate_regression_data() {
         );
     }
 
+    $sum_squared_error = 0; // SSres
+    $ss_tot = 0;
+    
+    // หาค่าเฉลี่ยยอดขายจริง (Mean Actual)
+    $mean_actual = ($n > 0) ? ($sum_y / $n) : 0;
+
+    foreach ( $historical_data as $row ) {
+        // 1. หาผลรวมความคลาดเคลื่อนกำลังสอง (SSres)
+        $sum_squared_error += pow(($row['actual'] - $row['regression']), 2);
+        
+        // 2. หาผลรวมความแปรปรวนจากค่าเฉลี่ยรวม (SStot)
+        $ss_tot += pow(($row['actual'] - $mean_actual), 2);
+    }
+
+    // 3. เข้าสูตรสถิติ R² = 1 - (SSres / SStot)
+    $r_squared = ($ss_tot > 0) ? (1 - ($sum_squared_error / $ss_tot)) : 1;
+    $r_squared_percentage = $r_squared * 100;
+    // -------------------------------------------------------------
+
     // ทำนายอนาคตล่วงหน้า 3 เดือน
     $forecast_data = array();
     $last_month_str = end( $months_label );
@@ -152,12 +171,9 @@ function wclrf_calculate_regression_data() {
         // 2. ระบบดักเซฟตี้: ถ้า Polynomial เหวี่ยงจนยอดต่ำกว่า 10% ของยอดเฉลี่ย หรือติดลบ
         // เราจะสลับไปใช้ค่ายอดขายเดือนล่าสุด (หรือค่าเฉลี่ย) ประคองกราฟแทนทันที
         if ( $pred_y < ( $average_sales * 0.10 ) ) {
-            // นายสามารถเลือกได้: 
-            // - ใช้ $last_actual_sales (ทรงตัวเท่าเดือนล่าสุด) -> แนะนำ ทรงกราฟจะเนียนสุด
-            // - ใช้ $average_sales (วิ่งเข้าหาค่าเฉลี่ยรวม)
             $final_forecast = $last_actual_sales; 
         } else {
-            $final_forecast = $pred_y; // ถ้าค่าปกติ ไม่เอเรอร์ ก็ใช้ค่าที่โมเดลทำนายมา
+            $final_forecast = $pred_y; 
         }
         
         $forecast_data[] = array(
@@ -167,11 +183,12 @@ function wclrf_calculate_regression_data() {
     }
 
     return array(
-        'historical' => $historical_data,
-        'forecast'   => $forecast_data,
-        'slope'      => $b, // ส่งตัวแปรหลอกไปให้หน้าบ้านรันได้ไม่พัง
-        'intercept'  => $c,
-        'poly_a'     => $a
+        'historical'           => $historical_data,
+        'forecast'             => $forecast_data,
+        'slope'                => $b, 
+        'intercept'            => $c,
+        'poly_a'               => $a,
+        'r_squared_percentage' => $r_squared_percentage 
     );
 }
 
@@ -184,7 +201,7 @@ function regression_setting_init()
 
 // 3. แสดงผลหน้า Dashboard สถิติหลังบ้าน
 function wclrf_render_dashboard_page() {
-    $data = wclrf_calculate_regression_data();
+    $data = calculate_regression_data();
     ?>
     <style>
     @media print {
@@ -332,18 +349,8 @@ function wclrf_render_dashboard_page() {
                             </thead>
                             <tbody>
                                 <?php 
-                                    $sum_squared_error = 0; // ตั้งตัวแปรไว้เก็บผลรวมด้านนอกลูป
-                                    $total_months = count( $data['historical'] );
-
                                     foreach ( $data['historical'] as $row ) : 
-                                        // 1. คำนวณหาผลต่างปกติ (Residual)
                                         $diff = $row['actual'] - $row['regression'];
-                                        
-                                        // 2. คำนวณคำถามของนาย: จับยกกำลังสองเป็น Squared Error ของเดือนนั้นๆ
-                                        $squared_error = pow($diff, 2); 
-                                        
-                                        // 3. บวกสะสมยอดเข้าคลังเพื่อเอาไปคิด MSE ภาพรวมหลังจบลูป
-                                        $sum_squared_error += $squared_error;
                                 ?>
                                 <tr>
                                     <td><strong><?php echo $row['month']; ?></strong></td>
@@ -354,23 +361,6 @@ function wclrf_render_dashboard_page() {
                                     </td>
                                 </tr>
                                 <?php endforeach; 
-                                $mse = ($total_months > 0) ? ($sum_squared_error / $total_months) : 0;
-
-                                $actual_values = array_column($data['historical'], 'actual');
-                                $mean_actual = ($total_months > 0) ? (array_sum($actual_values) / $total_months) : 0;
-
-                                // 2. คำนวณหาค่า SStot (ผลรวมความแปรปรวนจากค่าเฉลี่ย)
-                                $ss_tot = 0;
-                                foreach ($actual_values as $actual_val) {
-                                    $ss_tot += pow(($actual_val - $mean_actual), 2);
-                                }
-
-                                // 3. เข้าสูตร R² = 1 - (SSres / SStot)
-                                // ดักไว้หน่อยถ้า $ss_tot เป็น 0 (กรณีทุกเดือนยอดขายเท่ากันเป๊ะ) ให้ R² เป็น 1
-                                $r_squared = ($ss_tot > 0) ? (1 - ($sum_squared_error / $ss_tot)) : 1;
-                                
-                                // แปลงเป็นเปอร์เซ็นต์ให้มนุษย์อ่านง่ายๆ
-                                $r_squared_percentage = $r_squared * 100;
                                 ?>
                             </tbody>
                         </table>
@@ -379,7 +369,7 @@ function wclrf_render_dashboard_page() {
 
                 <div style="flex: 1; min-width: 280px;">
                     <div style="background: #fff; padding: 15px; border: 1px solid #ccd0d4; box-shadow: 0 1px 1px rgba(0,0,0,.04); border-top: 4px solid #ffb900;">
-                        <h3>🔮 ผลการทำนายยอดขาย (3 เดือนข้างหน้า) ค่า R Squared = <?=bcdiv($r_squared_percentage, 1, 2);?>%</h3>
+                        <h3>🔮 ผลการทำนายยอดขาย (3 เดือนข้างหน้า) ค่า R Squared = <?=bcdiv($data['r_squared_percentage'], 1, 2);?>%</h3>
                         <table class="wp-list-table widefat fixed striped">
                             <thead>
                                 <tr>
@@ -414,6 +404,96 @@ function wclrf_render_dashboard_page() {
             </div>
         <?php endif; ?>
     </div>
+    <?php
+}
+
+/**
+ * 1. ลงทะเบียนเพิ่ม Widget ในหน้า Dashboard ของ WordPress
+ */
+add_action('wp_dashboard_setup', 'register_forecast_dashboard_widget');
+
+function register_forecast_dashboard_widget() {
+    // ดึงชื่อเว็บมาทำเป็น ID หรือตั้งชื่อเท่ๆ ได้เลย
+    wp_add_dashboard_widget(
+        'sales_forecast_widget',                 // Widget Slug ID
+        '🔮 ระบบทำนายยอดขาย (Regression)',      // ชื่อหัวข้อที่จะโชว์บนแผงควบคุม
+        'render_forecast_dashboard_widget'       // ฟังก์ชันที่จะใช้พ่น HTML ออกมา
+    );
+}
+
+/**
+ * 2. ฟังก์ชันแสดงผลและจัดการระบบ Cache (Transient API)
+ */
+function render_forecast_dashboard_widget() {
+    // ตั้งชื่อคีย์สำหรับเก็บแคช (แยกตามชื่อเว็บ จะได้ไม่ตีกันถ้าก๊อปไปใช้หลายที่)
+    $cache_key = 'sales_forecast_cache_data';
+    
+    // ตั้งเวลาหมดอายุแคช: 10 วัน (10 วัน * 24 ชั่วโมง * 60 นาที * 60 วินาที)
+    $cache_expiration = 10 * DAY_IN_SECONDS; 
+
+    $cached_data = get_transient($cache_key);
+
+    if ( false === $cached_data ) {
+        if ( function_exists('calculate_regression_data') ) {
+            $data = calculate_regression_data(); 
+        } else {
+            // ดักไว้กันพังชั่วคราว เผื่อเรียกหาฟังก์ชันไม่เจอ
+            echo "<p style='color:red;'>ไม่พบฟังก์ชันสำหรับคำนวณข้อมูลยอดขาย</p>";
+            return;
+        }
+
+        // นำค่า R-Squared ที่คำนวณได้สดๆ ร้อนๆ มาเก็บพ่วงไปด้วย
+        // (สมมุติว่าฟังก์ชันนายส่งค่า $r_squared_percentage กลับมาในอาร์เรย์ด้วย)
+        $cached_data = [
+            'r_squared' => isset($data['r_squared_percentage']) ? $data['r_squared_percentage'] : 0,
+            'forecast'  => isset($data['forecast']) ? $data['forecast'] : []
+        ];
+
+        set_transient($cache_key, $cached_data, $cache_expiration);
+        
+        echo "";
+    } else {
+        echo "";
+    }
+    $r_squared_percentage = $cached_data['r_squared'];
+    $forecast_list        = $cached_data['forecast'];
+    ?>
+    <div style="background: #fffdf5; padding: 12px; border-left: 4px solid #ffb900; margin-bottom: 10px;">
+        <h4 style="margin: 0 0 5px 0; font-size: 14px;">
+            ความแม่นยำโมเดล (R-Squared): 
+            <span style="color:#46b450; font-weight:bold;">
+                <?php echo number_format($r_squared_percentage, 2); ?>%
+            </span>
+        </h4>
+    </div>
+    <table class="wp-list-table widefat fixed striped" style="box-shadow: none; border: 1px solid #ccd0d4;">
+        <thead>
+            <tr>
+                <th style="padding: 8px 10px; font-weight: bold;">เดือนอนาคต</th>
+                <th style="padding: 8px 10px; font-weight: bold;">ยอดคาดการณ์ (Forecast)</th>
+            </tr>
+        </thead>
+        <tbody>
+            <?php if ( ! empty($forecast_list) ) : ?>
+                <?php foreach ( $forecast_list as $row ) : ?>
+                <tr>
+                    <td style="padding: 8px 10px;"><strong><?php echo esc_html($row['month']); ?></strong></td>
+                    <td style="padding: 8px 10px; font-size:14px; font-weight:bold; color: #d54e21;">
+                        ฿ <?php echo number_format( $row['forecast'], 2 ); ?>
+                    </td>
+                </tr>
+                <?php endforeach; ?>
+            <?php else : ?>
+                <tr>
+                    <td colspan="2" style="text-align:center; padding:10px; color:#999;">ไม่มีข้อมูลการทำนาย</td>
+                </tr>
+            <?php endif; ?>
+        </tbody>
+    </table>
+    
+    <p class="description" style="margin-top: 10px; font-size: 11px; line-height: 1.4;">
+        * หมายเหตุ: เก็บข้อมูลแคชไว้ 10 วันเพื่อความรวดเร็ว | คำนวณตามโมเดลพฤติกรรมเฉพาะตัวของร้านค้า ไม่รวมปัจจัยโปรโมชั่นเสริมภายนอก
+    </p>
     <?php
 }
 
