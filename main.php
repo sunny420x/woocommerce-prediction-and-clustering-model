@@ -1,6 +1,6 @@
 <?php
 /**
- * Plugin Name: WooCommerce Sales Prediction And Customer Clustering Model.
+ * Plugin Name: WooCommerce Sales Prediction And Customer Clustering Model
  * Description: ทำนายยอดขายรายเดือนล่วงหน้า (Polynomial Regression) และจัดกลุ่มลูกค้า (K-Means Clustering)
  * Author: Jirakit Pawnsakunrungrot
  * Author URI: https://www.linkedin.com/in/sunny-jirakit
