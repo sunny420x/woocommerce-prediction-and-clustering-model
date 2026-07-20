@@ -1,11 +1,10 @@
 <?php
 /**
- * Plugin Name: WooCommerce Sales Polynomial Regression Forecast
- * Description: วิเคราะห์แนวโน้มและทำนายยอดขายรายเดือนล่วงหน้า 3 เดือนด้วย Polynomial Regression
- * Version: 1.0.0
+ * Plugin Name: WooCommerce Sales Prediction And Customer Clustering Model.
+ * Description: ทำนายยอดขายรายเดือนล่วงหน้า (Polynomial Regression) และจัดกลุ่มลูกค้า (K-Means Clustering)
  * Author: Jirakit Pawnsakunrungrot
  * Author URI: https://www.linkedin.com/in/sunny-jirakit
- * Plugin URI: https://github.com/sunny420x/woocommerce-regression
+ * Plugin URI: https://github.com/sunny420x/woocommerce-prediction-and-clustering-model
  * License: GPL2
  */
 
@@ -428,8 +427,8 @@ function render_forecast_dashboard_widget() {
     // ตั้งชื่อคีย์สำหรับเก็บแคช (แยกตามชื่อเว็บ จะได้ไม่ตีกันถ้าก๊อปไปใช้หลายที่)
     $cache_key = 'sales_forecast_cache_data';
     
-    // ตั้งเวลาหมดอายุแคช: 10 วัน (10 วัน * 24 ชั่วโมง * 60 นาที * 60 วินาที)
-    $cache_expiration = 10 * DAY_IN_SECONDS; 
+    // ตั้งเวลาหมดอายุแคช: 1 วัน (1 วัน * 24 ชั่วโมง * 60 นาที * 60 วินาที)
+    $cache_expiration = 1 * DAY_IN_SECONDS; 
 
     $cached_data = get_transient($cache_key);
 
@@ -631,9 +630,9 @@ function wckmc_render_clustering_page() {
     
     // นิยามป้ายกำกับกลุ่มแบบเข้าใจง่าย
     $cluster_labels = array(
-        0 => 'กลุ่มที่ 1 (ลูกค้าทั่วไป/มาซื้อเป็นครั้งคราว)',
-        1 => 'กลุ่มที่ 2 (กลุ่มความถี่สูง/ซื้อบ่อย)',
-        2 => 'กลุ่มที่ 3 (กลุ่มพรีเมียม)'
+        0 => 'กลุ่มที่ 1',
+        1 => 'กลุ่มที่ 2',
+        2 => 'กลุ่มที่ 3'
     );
 
     // เซ็ตคู่สีประจำกลุ่มสำหรับวาดกราฟ Scatter Plot
