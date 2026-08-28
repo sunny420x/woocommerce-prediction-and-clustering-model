@@ -8,6 +8,7 @@
  * GitHub Plugin URI: https://github.com/sunny420x/woocommerce-prediction-and-clustering-model
  * Primary Branch: master
  * License: GPL2
+ * Version: 1.0.0
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
