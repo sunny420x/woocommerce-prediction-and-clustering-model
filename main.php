@@ -5,6 +5,8 @@
  * Author: Jirakit Pawnsakunrungrot
  * Author URI: https://www.linkedin.com/in/sunny-jirakit
  * Plugin URI: https://github.com/sunny420x/woocommerce-prediction-and-clustering-model
+ * GitHub Plugin URI: https://github.com/sunny420x/woocommerce-prediction-and-clustering-model
+ * Primary Branch: master
  * License: GPL2
  */
 
